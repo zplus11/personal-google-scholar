@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>publications</title>
+		<style>
+
+html { font-size: 18px; line-height: 1.2 }
+.panels { display: grid; grid-template-columns: 7fr 3fr; align-items: start; gap: 4px }			
+.label { color: gray }
+header center span { font-size: 1.4rem }
+#left > * { margin: 5px 0 }
+#right { border: solid #B3B3C9 0.4px; margin-top: 10px; padding: 10px; position: sticky; top: 10px; max-height: 95vh; overflow: auto }
+#right table td { vertical-align: top }
+#right ol { margin: 5px 0; padding-left: 1.4rem }
+#right li { margin-bottom: 6px }
+#right .small { font-size: 0.8rem }
+#right .abstract { font-size: 0.85rem; text-align: justify }
+fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
+
+.table { margin-bottom: 5rem; font-size: 0.9rem }
+.table table { border-collapse: collapse }
+.table td, th { padding: 4px; vertical-align: top }
+.table thead { border-bottom: solid #B3B3C9 0.4px }
+.table tbody tr:hover { background: #F2F2F8 }
+
+@media (max-width: 800px) {
+	.panels { grid-template-columns: 1fr }
+	#right { position: static; max-height: none }
+}
+
+		</style>
+	</head>
+	<body>
+		<header>
+			<center>
+				<span>Publications of <strong id="researcherName"></strong></span>
+				<p><i>Data retrieved from <a href="https://www.crossref.org/" target="_blank">Crossref</a> and <a href="https://opencitations.net/" target="_blank">OpenCitations.</a></i></p>
+			</center>
+		</header>
+		<main>
+			<div class="panels">
+				<fieldset id="left">
+					<legend>Papers</legend>
+					<div class="table">
+						<table>
+							<thead><tr>
+									<td></td>
+									<td>DOI</td>
+									<td>Title</td>
+									<td>Authors</td>
+									<td>When</td>
+									<td>Journal</td>
+									<td>Cit</td>
+								</tr></thead>
+								<tbody id="papers"></tbody>
+						</table>
+					</div>
+					<br>
+					<form onsubmit="return false">
+						Enter <input type="text" id="doiInput" placeholder="DOI"> to <button type="button" id="addPaperBtn">see</button> details of the paper below.
+						<div id="manualTable" style="display: none" class="table">
+							<table>
+								<thead>
+									<tr>
+										<td></td>
+										<td>DOI</td>
+										<td>Title</td>
+										<td>Authors</td>
+										<td>When</td>
+										<td>Journal</td>
+										<td>Cit</td>
+									</tr>
+								</thead>
+
+								<tbody id="manualpapers"></tbody>
+							</table>
+						</div>
+					</form>
+					<!-- <form>
+						Enter <input type="text" id="authorname" placeholder="author name"> to <button type="button" id="searchauthor">search</button> all works of given author. Not today.
+						<div id="authorTable" style="display: none" class="table">
+						<table>
+						<thead>
+						<tr>
+						<td></td>
+						<td>DOI</td>
+						<td>Title</td>
+						<td>Authors</td>
+						<td>When</td>
+						<td>Journal</td>
+						<td>Cit</td>
+						</tr>
+						</thead>
+
+						<tbody id="authorpapers"></tbody>
+						</table>
+						</div>
+						</form> -->
+				</fieldset>
+				<div id="right">
+				</div>
+			</div>
+		</main>
+		<footer>
+
+		</footer>
+
+
+		<script>
+
+			const CONFIG = { 
+				researcher: {
+					name: "Ada Example",
+					email: "ada.example@example.com",
+					/* lowercase, every way your name shows up in the data */
+					aliases: [
+						"a example",
+						"a. example",
+						"ada example",
+						"example, ada",
+						"example, a",
+						"example, a.",
+						"example ada",
+						"example a",
+						"example a.",
+					]
+				},
+				crossref: {
+					base: "https://api.crossref.org/works/"
+				},
+				alex: {
+					base: "https://api.openalex.org/works/https://doi.org/",
+					citing: {
+						base: "https://api.openalex.org/works?filter=cites:",
+						tail: "&per-page=200&sort=cited_by_count:desc"
+					},
+					refs: {
+						base: "https://api.openalex.org/works?filter=openalex:",
+						tail: "&per-page=100&sort=cited_by_count:desc"
+					},
+					search: {
+						base: "https://api.openalex.org/works?search="
+					}
+				},
+				openCitations: {
+					base: "https://api.opencitations.net/index/v2/citations/doi:",
+					key: "77ad02c079abea8361b7b526c2a36627"
+				},
+				dataSource: "dois.json"
+			};
+
+			const NAME_ALIASES = new Set(CONFIG.researcher.aliases);
+
+			const mons = ["Jan.", "Feb.", "Mar.", "Apr.", "May", "June",
+				"July", "Aug.", "Sep.", "Oct.", "Nov.", "Dec."];
+
+			const right = document.getElementById("right");
+
+			/* every work fetched so far, by doi and by openalex id */
+			const cache = new Map();
+
+			/* views shown in the right panel, last one is the current one */
+			const trail = [];
+			let token = 0; /* changes on every navigation, stops late fetches from overwriting the panel */
+
+			let pdata = []; /* my papers, set in main */
+			let extra = 0; /* papers added manually */
+
+			async function getDois(src) {
+				const res = await fetch(src);
+				if (!res.ok) throw new Error("cannot load " + src);
+				return await res.json();
+			}
+
+			/* fetch json from openalex, polite pool */
+			async function api(url) {
+				const res = await fetch(
+					url +
+					(url.includes("?") ? "&" : "?") +
+					"mailto=" + CONFIG.researcher.email
+				);
+
+				if (!res.ok) throw new Error(res.status + " " + url);
+
+				return await res.json();
+			}
+
+			async function searchAuthor(name) {
+
+				const url =
+					CONFIG.alex.search.base +
+					encodeURIComponent(name);
+
+				const data = await api(url);
+
+				return data.results || [];
+			}
+
+			/* escape text before it goes into innerHTML */
+			function esc(s) {
+				return String(s ?? "NA").replace(/[&<>"]/g, c => ({
+					"&": "&amp;",
+					"<": "&lt;",
+					">": "&gt;",
+					'"': "&quot;"
+				}[c]));
+			}
+
+			/* openalex stores abstracts as word -> positions */
+			function abstractof(ii) {
+				if (!ii) return null;
+
+				const words = [];
+				Object.entries(ii).forEach(([w, pos]) =>
+					pos.forEach(p => words[p] = w)
+				);
+
+				return words.join(" ");
+			}
+
+			/* turn an openalex work into the doc used everywhere */
+			function shape(d) {
+				const [y, m, d0] =
+					(d.publication_date ?? "")
+					.split("-")
+					.map(Number);
+
+				const whena = y
+					? `${d0 ? d0 + " " : ""}${m ? mons[m - 1] + " " : ""}${y}`
+					: "NA";
+
+				const doi = d.doi?.replace("https://doi.org/", "") ?? null;
+				const refs = (d.referenced_works ?? []).map(r => r.split("/").pop());
+
+				return {
+					full: d,
+					id: d.id.split("/").pop(),
+					url: doi ? "https://doi.org/" + doi : d.id,
+					title: d.title ?? null,
+					doi: doi,
+					year: d.publication_year ?? null,
+					when: whena,
+					type: d.type ?? null,
+					oa: d.open_access?.is_oa ?? false,
+					oaurl: d.open_access?.oa_url ?? null,
+					journal: d.primary_location?.source?.display_name ?? null,
+					issn: d.primary_location?.source?.issn ?? null,
+					publisher: d.primary_location?.source?.host_organization_name ?? null,
+					authors: d.authorships ?? [],
+					apc: d.apc_paid ?? null,
+					abstract: abstractof(d.abstract_inverted_index),
+					citations: {
+						count: d.cited_by_count ?? 0,
+						works: null /* fetched when asked for */
+					},
+					references: {
+						count: refs.length,
+						ids: refs,
+						works: null
+					},
+					peryear: (d.counts_by_year ?? [])
+						.slice()
+						.sort((a, b) => b.year - a.year)
+						.map(c => `${c.year}: ${c.cited_by_count}`)
+						.join(", "),
+					citetile: d.citation_normalized_percentile?.value ?? null,
+					vol: d.biblio?.volume ?? null,
+					issue: d.biblio?.issue ?? null,
+					pp: d.biblio?.first_page && d.biblio?.last_page
+					? d.biblio.first_page + "-" + d.biblio.last_page
+					: null,
+					topic: d.primary_topic?.display_name ?? null,
+					field: {
+						field: d.primary_topic?.field?.display_name ?? null,
+						subfield: d.primary_topic?.subfield?.display_name ?? null
+					},
+					domain: d.primary_topic?.domain?.display_name ?? null,
+					keywords: d.keywords?.map(en => en.display_name).join(", ") ?? ""
+				};
+			}
+
+			/* doc of a work that came inside a list, reuses what we already have */
+			function known(w) {
+				const id = w.id.split("/").pop();
+
+				if (!cache.has(id)) cache.set(id, shape(w));
+
+				return cache.get(id);
+			}
+
+			/* get the data for doi from openalex */
+			async function getData(doi) {
+				doi = doi.trim().replace(/^https?:\/\/(dx\.)?doi\.org\//i, "");
+
+				if (cache.has(doi.toLowerCase()))
+					return cache.get(doi.toLowerCase());
+
+				let d;
+
+				try {
+					d = await api(CONFIG.alex.base + doi);
+				}
+				catch (e) {
+					console.warn("Skipping invalid DOI:", doi);
+					return null;
+				}
+
+				const doc = known(d);
+
+				cache.set(doi.toLowerCase(), doc);
+
+				return doc;
+			}
+
+			/* fetch data for all dois, few at a time */
+			async function crd(dois) {
+				const results = [];
+
+				for (let i = 0; i < dois.length; i += 5) {
+					const got = await Promise.all(
+						dois.slice(i, i + 5).map(doi =>
+							getData(doi).catch(e => {
+								console.error(doi, e);
+								return null;
+							})
+						)
+					);
+
+					results.push(...got.filter(Boolean));
+					console.log(".");
+				}
+
+				return results;
+			}
+
+			/* raw json data of a document */
+			function full(doc) {
+				doc.rawurl ??= URL.createObjectURL(
+					new Blob(
+						[JSON.stringify(doc.full, null, 2)],
+						{ type: "application/json" }
+					)
+				);
+				return doc.rawurl;
+			}
+
+			/* bibtex entry of a document */
+			function bibtex(doc) {
+				const f = {
+					title: doc.title,
+					author: doc.authors.map(authname).join(" and "),
+					journal: doc.journal,
+					year: doc.year,
+					volume: doc.vol,
+					number: doc.issue,
+					pages: doc.pp,
+					doi: doc.doi
+				};
+
+				return `@article{${doc.id},\n` +
+					Object.entries(f)
+					.filter(([k, v]) => v)
+					.map(([k, v]) => `\t${k} = {${v}}`)
+					.join(",\n") +
+					"\n}";
+			}
+
+			/* right panel navigation */
+
+			function show(render) {
+				token++;
+				trail.push(render);
+				render();
+			}
+
+			function back() {
+				if (trail.length < 2) return home();
+
+				token++;
+				trail.pop();
+				trail[trail.length - 1]();
+			}
+
+			function home() {
+				token++;
+				trail.length = 0;
+
+				document.querySelectorAll("input[name=paper]")
+					.forEach(r => r.checked = false);
+
+				defaultRight(pdata);
+			}
+
+			function navbar() {
+				return `
+					<button id="backBtn" ${trail.length > 1 ? "" : "disabled"}>back</button>
+					<button id="closeBtn">close</button>
+					<hr>`;
+			}
+
+			function wirenav() {
+				document.getElementById("backBtn").onclick = back;
+				document.getElementById("closeBtn").onclick = home;
+			}
+
+			/* link with a count, opens the citing works (or references) of given doc in the right panel */
+			function citing(doc, kind = "cited by") {
+
+				const { count } =
+					kind === "references" ? doc.references : doc.citations;
+
+				const a = document.createElement("a");
+
+				a.href = "#";
+				a.textContent = count;
+
+				a.onclick = e => {
+					e.preventDefault();
+					show(() => listing(doc, kind));
+				};
+
+				return a;
+			}
+
+			/* works that cite (or are cited by) the doc, fetched once */
+			async function related(doc, kind) {
+				const set = kind === "references" ? doc.references : doc.citations;
+
+				if (!set.works) {
+					const url = kind === "references"
+						? CONFIG.alex.refs.base + set.ids.slice(0, 100).join("|") + CONFIG.alex.refs.tail
+						: CONFIG.alex.citing.base + doc.id + CONFIG.alex.citing.tail;
+
+					set.works = set.count
+						? (await api(url)).results ?? []
+						: [];
+				}
+
+				return set;
+			}
+
+			async function listing(doc, kind) {
+				const t = token;
+
+				right.innerHTML = `
+					${navbar()}
+					<span class="label">${kind}</span> <i>${esc(doc.title)}</i>
+					<p class="label">loading...</p>`;
+				wirenav();
+
+				let set;
+
+				try {
+					set = await related(doc, kind);
+				}
+				catch (e) {
+					console.error(e);
+					if (t !== token) return;
+					right.innerHTML = `${navbar()}<p>Failed to load ${kind}.</p>`;
+					wirenav();
+					return;
+				}
+
+				/* user went somewhere else meanwhile */
+				if (t !== token) return;
+
+				const docs = set.works.map(known);
+
+				right.innerHTML = `
+					${navbar()}
+					<span class="label">${kind}</span> <i>${esc(doc.title)}</i>
+					<p class="small label">${
+						docs.length < set.count
+							? `showing ${docs.length} of ${set.count}, sorted by citations`
+							: `${set.count} in total`
+					}</p>
+					${!docs.length ? "<p>NA</p>" : `
+					<ol>
+					${docs.map(w => `
+						<li>
+						<a href="#" class="open">${esc(w.title)}</a>
+						<a href="${esc(w.url)}" target="_blank" title="open source page">&nearr;</a>
+						<br><span class="small label">
+						${esc(w.authors.slice(0, 3).map(authname).join(", "))}${w.authors.length > 3 ? " et al." : ""}
+						· ${esc(w.year)} · ${esc(w.journal)} · ${w.citations.count} cit
+						</span>
+						</li>
+					`).join("")}
+					</ol>`}`;
+				wirenav();
+
+				/* clicking a paper brings it to this panel */
+				right.querySelectorAll("a.open").forEach((a, i) => {
+					a.onclick = e => {
+						e.preventDefault();
+						show(() => detail(docs[i]));
+					};
+				});
+			}
+
+			function detail(doc) {
+				right.innerHTML = `
+					${navbar()}
+					<table class="paper">
+
+					<tr><td class="label">raw</td>
+					<td><a href="${full(doc)}" target="_blank">&Theta;</a></td></tr>
+
+					<tr><td class="label">doi</td>
+					<td><a href="${esc(doc.url)}" target="_blank">${esc(doc.doi ?? doc.id)}</a></td></tr>
+
+					<tr><td class="label">authors</td>
+					<td id="authorshere"></td></tr>
+
+					<tr><td class="label">when</td>
+					<td>${esc(doc.when)}</td></tr>
+
+					<tr><td class="label">title</td>
+					<td><i>${esc(doc.title)}</i></td></tr>
+
+					${doc.abstract ? `
+					<tr><td class="label">abstract</td>
+					<td class="abstract">${esc(doc.abstract)}</td></tr>` : ""}
+
+					<tr><td class="label">journal</td>
+					<td>${esc(doc.journal)}</td></tr>
+
+					<tr><td class="label">vol</td>
+					<td><strong>${esc(doc.vol)}</strong> (${esc(doc.issue)})</td></tr>
+
+					<tr><td class="label">pp</td>
+					<td>${esc(doc.pp)}</td></tr>
+
+					<tr><td class="label">access</td>
+					<td>${doc.oaurl
+						? `<a href="${esc(doc.oaurl)}" target="_blank">open access</a>`
+						: "closed / unknown"}</td></tr>
+
+					<tr><td class="label">citations</td>
+					<td id="citehere">Cited by </td></tr>
+
+					<tr><td class="label">references</td>
+					<td id="refhere"></td></tr>
+
+					<tr><td class="label">per year</td>
+					<td>${esc(doc.peryear || null)}</td></tr>
+
+					<tr><td class="label">cit %ile</td>
+					<td>${esc(doc.citetile)}</td></tr>
+
+					<tr><td class="label">topic</td>
+					<td>${esc(doc.topic)}</td></tr>
+
+					<tr><td class="label">domain</td>
+					<td>${esc(doc.domain)}</td></tr>
+
+					<tr><td class="label">field</td>
+					<td>${esc(doc.field.field)} &gt; ${esc(doc.field.subfield)}</td></tr>
+
+					<tr><td class="label">keywords</td>
+					<td>${esc(doc.keywords)}</td></tr>
+
+					<tr><td class="label">publisher</td>
+					<td>${esc(doc.publisher)}</td></tr>
+
+					<tr><td class="label">issn</td>
+					<td>${esc(Array.isArray(doc.issn) ? doc.issn.join(", ") : doc.issn)}</td></tr>
+
+					<tr><td class="label"></td>
+					<td>
+					<button id="bibBtn">copy bibtex</button>
+					<button id="addRowBtn">add to table</button>
+					</td></tr>
+					</table>`;
+
+				wirenav();
+
+				document.getElementById("authorshere").appendChild(
+					listauthors(doc.authors)
+				);
+				document.getElementById("citehere").appendChild(citing(doc));
+				document.getElementById("refhere").appendChild(citing(doc, "references"));
+
+				const bibBtn = document.getElementById("bibBtn");
+				bibBtn.onclick = () => navigator.clipboard
+					.writeText(bibtex(doc))
+					.then(() => bibBtn.textContent = "copied");
+
+				document.getElementById("addRowBtn").onclick =
+					() => addrow(doc);
+			}
+
+			function authname(aut) {
+				return aut.raw_author_name ?? aut.author?.display_name ?? "??";
+			}
+
+			function listauthor(aut) {
+				const span = document.createElement("span");
+				const name = authname(aut);
+
+				span.textContent = NAME_ALIASES.has(name.toLowerCase().trim())
+					? CONFIG.researcher.name
+					: name;
+
+				span.title = (aut.raw_affiliation_strings?.length
+					? aut.raw_affiliation_strings
+					: aut.institutions?.map(i => i.display_name) ?? []
+				).join("\n");
+				span.style.cursor = "pointer";
+
+				if (span.textContent === CONFIG.researcher.name) {
+					span.style.fontWeight = "bold";
+				}
+
+				return span;
+			}
+
+			function listauthors(authors) {
+
+				const frag =
+					document.createDocumentFragment();
+
+				authors.forEach((a, i) => {
+
+					frag.appendChild(
+						listauthor(a)
+					);
+
+					if (i < authors.length - 1)
+						frag.append(", ");
+				});
+
+				return frag;
+			}
+
+			const renderers = {
+				full(cell, doc, i, pd) {
+					cell.style.whiteSpace = "nowrap";
+
+					const radio = document.createElement("input");
+					radio.type = "radio";
+					radio.name = "paper";
+					radio.id = "paper-" + i;
+
+					/* picking from the table starts a fresh trail */
+					radio.onchange = () => {
+						trail.length = 0;
+						show(() => detail(doc));
+					};
+
+					cell.appendChild(radio);
+
+					const link = document.createElement("a");
+					link.href = full(doc);
+					link.innerHTML = "&Theta;";
+					link.target = "_blank";
+
+					cell.appendChild(link);
+				},
+
+				doi(cell, doc) {
+					const link = document.createElement("a");
+
+					link.href = doc.url;
+					link.textContent = doc.doi ?? doc.id;
+					link.target = "_blank";
+
+					cell.appendChild(link);
+				},
+
+				citations(cell, doc) {
+					cell.appendChild(citing(doc));
+				},
+
+				authors(cell, doc) {
+					cell.appendChild(
+						listauthors(doc.authors)
+					);
+				}
+			};
+
+			function row(doc, i, pd) {
+				const tr = document.createElement("tr");
+
+				const showkeys = [
+					"full",
+					"doi",
+					"title",
+					"authors",
+					"when",
+					"journal",
+					"citations"
+				];
+
+				showkeys.forEach(key => {
+					const cell = document.createElement("td");
+
+					if (renderers[key]) {
+						renderers[key](cell, doc, i, pd);
+					} else {
+						cell.textContent = doc[key] ?? "NA";
+					}
+
+					tr.appendChild(cell);
+				});
+
+				return tr;
+			}
+
+			/* put a doc in the table below the doi box, once */
+			function addrow(doc) {
+				const manualbd = document.getElementById("manualpapers");
+
+				/* already in one of the tables */
+				if (pdata.includes(doc) ||
+					[...manualbd.children].some(tr => tr.dataset.id === doc.id))
+					return;
+
+				document.getElementById("manualTable").style.display = "block";
+
+				const tr = row(doc, pdata.length + extra++, pdata);
+				tr.dataset.id = doc.id;
+				manualbd.appendChild(tr);
+			}
+
+			/* citation indices */
+
+			function hindex(citations) {
+				let h = 0;
+				for (let i = 0; i < citations.length; i++) {
+					if (citations[i] >= i + 1)
+						h = i + 1;
+				}
+
+				return h;
+			}
+
+			function i10index(citations) {
+				return citations
+					.filter(c => (c >= 10))
+					.length;
+			}
+
+			function gindex(citations) {
+				let sum = 0;
+				let g = 0;
+
+				for (let i = 0; i < citations.length; i++) {
+					sum += citations[i];
+
+					/* g: largest number whose top papers have at least g^2 citations together */
+					if (sum >= (i + 1)**2)
+						g = i + 1;
+				}
+
+				return g;
+			}
+
+			function meancitations(citations) {
+				if (!citations.length) return 0;
+
+				return totalcitations(citations) /
+					citations.length;
+			}
+
+			function mediancitations(citations) {
+				if (!citations.length) return 0;
+
+				const mid = Math.floor(citations.length / 2);
+
+				return citations.length % 2
+					? citations[mid]
+					: (citations[mid - 1] + citations[mid]) / 2;
+			}
+
+			function eindex(citations) {
+				let h = hindex(citations);
+
+				let top = totalcitations(
+					citations.slice(0, h)
+				);
+
+				return Math.sqrt(Math.max(0, top - h * h));
+			}
+
+			function totalcitations(citations) {
+				return citations
+					.reduce((s, c) => s + c, 0);
+			}
+
+			function maxcitations(citations) {
+				return citations.length
+					? Math.max(...citations)
+					: 0;
+			}
+
+			function indices(citations) {
+				citations = [...citations].sort((a, b) => b - a);
+
+				return {
+					h: hindex(citations),
+					i10: i10index(citations),
+					g: gindex(citations),
+					mean: meancitations(citations).toFixed(2),
+					median: mediancitations(citations),
+					e: eindex(citations).toFixed(2),
+					max: maxcitations(citations),
+					total: totalcitations(citations)
+				}
+			};
+
+			function defaultRight(pd) {
+
+				const citations =
+					pd.map(doc => doc.citations.count ?? 0);
+
+				const cd = indices(citations);
+
+				const top = [...pd]
+					.sort((a, b) => b.citations.count - a.citations.count)
+					.slice(0, 5);
+
+				right.innerHTML = `
+		<button id="downloadCsvBtn">
+			Download CSV
+		</button>
+		<hr>
+
+		Total papers: <strong>${pd.length}</strong> <br>
+		Total citations: <strong>${cd.total}</strong> <br>
+		Mean citations: <strong>${cd.mean}</strong> <br>
+		Median citations: <strong>${cd.median}</strong> <br>
+		Max citations: <strong>${cd.max}</strong> <br><br>
+
+		h-index: <strong>${cd.h}</strong> <br>
+		i10-index: <strong>${cd.i10}</strong> <br>
+		g-index: <strong>${cd.g}</strong> <br>
+		e-index: <strong>${cd.e}</strong> <br><br>
+
+		<span class="label">most cited</span>
+		<ol id="topcited">
+		${top.map(d => `
+			<li><a href="#">${esc(d.title)}</a>
+			<span class="small label">(${d.citations.count})</span></li>
+		`).join("")}
+		</ol>
+
+		<i>Select a paper to see more info about it. Citations and references open here too.</i>
+	`;
+
+				document.getElementById("downloadCsvBtn")
+					.onclick = () => downloadCSV(pd);
+
+				document.querySelectorAll("#topcited a").forEach((a, i) => {
+					a.onclick = e => {
+						e.preventDefault();
+						trail.length = 0;
+						show(() => detail(top[i]));
+					};
+				});
+			}
+
+			async function adddoi(pd, addBtn) {
+				const doiInput = document.getElementById("doiInput");
+
+				const doi = doiInput.value.trim();
+
+				if (!doi) return;
+
+				addBtn.disabled = true;
+
+				try {
+					const doc = await getData(doi);
+
+					if (!doc) {
+						alert("Invalid DOI");
+					}
+					else {
+						addrow(doc);
+						doiInput.value = "";
+					}
+				}
+				catch (e) {
+					console.error(e);
+					alert("Failed");
+				}
+
+				addBtn.disabled = false;
+			}
+
+			function downloadCSV(pd) {
+
+				if (!pd.length) return;
+
+				const rows = pd.map(doc => ({
+					doi: doc.doi,
+					title: doc.title,
+					authors: doc.authors
+					.map(authname)
+					.join("; "),
+					when: doc.when,
+					journal: doc.journal,
+					citations: doc.citations.count,
+					volume: doc.vol,
+					issue: doc.issue,
+					pages: doc.pp,
+					topic: doc.topic,
+					domain: doc.domain,
+					field: doc.field.field,
+					subfield: doc.field.subfield,
+					publisher: doc.publisher,
+					issn: Array.isArray(doc.issn) ? doc.issn.join("; ") : doc.issn,
+					keywords: doc.keywords
+				}));
+
+				const headers = Object.keys(rows[0]);
+
+				const csv = "\uFEFF" + [
+					headers.join(","),
+					...rows.map(r => {
+						return headers.map(h => {
+							return '"' +
+								String(r[h] ?? '').replace(/"/g, '""') +
+								'"';
+						}).join(",");
+					})
+				].join("\n");
+
+				const blob = new Blob(
+					[csv],
+					{ type: "text/csv;charset=utf-8;" }
+				);
+
+				const a = document.createElement("a");
+				a.href = URL.createObjectURL(blob);
+				a.download = "publications.csv";
+				a.click();
+			}
+
+
+			async function main() {
+
+				const left = document.getElementById("left");
+				const pprbd = document.getElementById("papers");
+
+				/* researcher details from config */
+				document.getElementById("researcherName").textContent = CONFIG.researcher.name;
+				document.title = "Publications of " + CONFIG.researcher.name;
+
+				right.textContent = "loading...";
+
+				let dois;
+
+				try {
+					dois = await getDois(CONFIG.dataSource);
+				}
+				catch (e) {
+					console.error(e);
+					right.textContent = "Could not load " + CONFIG.dataSource;
+					return;
+				}
+
+				const pd = (await crd(dois))
+					.sort((a, b) => {
+						const da = new Date(a.full.publication_date);
+						const db = new Date(b.full.publication_date);
+						return db - da; // newest first
+					});
+
+				pdata = pd;
+
+				/* initialise right panel */
+				defaultRight(pd);
+
+				/* populate my papers */
+				pd.forEach((doc, i) => pprbd.appendChild(row(doc, i, pd)));
+
+				/* add search doi button, enter works too */
+				const addBtn = document.getElementById("addPaperBtn");
+				addBtn.onclick = async () => adddoi(pd, addBtn);
+				document.getElementById("doiInput").onkeydown = e => {
+					if (e.key === "Enter") addBtn.click();
+				};
+
+				/* escape goes one step back in the right panel */
+				document.onkeydown = e => {
+					if (e.key === "Escape" && e.target.tagName !== "INPUT") back();
+				};
+
+				/* add search author button */
+				/* const searchBtn = document.getElementById("searchauthor");
+				searchBtn.onclick = async () => searchauthor(
+					document.getElementById("authorname").value,
+					searchBtn
+				); */
+			}
+
+			main();
+
+		</script>
+	</body>
+</html>
