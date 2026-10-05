@@ -6,23 +6,26 @@
 		<title>publications</title>
 		<style>
 
+:root { --border: solid #B3B3C9 0.4px }
 html { font-size: 18px; line-height: 1.2 }
 .panels { display: grid; grid-template-columns: 7fr 3fr; align-items: start; gap: 4px }			
 .label { color: gray }
+.small { font-size: 0.85rem; line-height: 1 }
+.author { cursor: pointer }
+.me { font-weight: bold }
 header center span { font-size: 1.4rem }
 #left > * { margin: 5px 0 }
-#right { border: solid #B3B3C9 0.4px; margin-top: 10px; padding: 10px; position: sticky; top: 10px; max-height: 95vh; overflow: auto }
-#right table td { vertical-align: top }
+#right { border: var(--border); margin-top: 10px; padding: 10px; position: sticky; top: 10px; max-height: 95vh; overflow: auto }
 #right ol { margin: 5px 0; padding-left: 1.4rem }
 #right li { margin-bottom: 6px }
-#right .small { font-size: 0.8rem }
-#right .abstract { font-size: 0.85rem; text-align: justify }
-fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
+fieldset { margin: 0; border: var(--border) }
+.chip { margin-right: 12px; white-space: nowrap }
 
-.table { margin-bottom: 5rem; font-size: 0.9rem }
+.table { margin-bottom: 5rem }
 .table table { border-collapse: collapse }
-.table td, th { padding: 4px; vertical-align: top }
-.table thead { border-bottom: solid #B3B3C9 0.4px }
+td, th { vertical-align: top }
+.table td, .table th { padding: 4px }
+.table thead { border-bottom: var(--border) }
 .table tbody tr:hover { background: #F2F2F8 }
 
 @media (max-width: 800px) {
@@ -36,14 +39,15 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 		<header>
 			<center>
 				<span>Publications of <strong id="researcherName"></strong></span>
-				<p><i>Data retrieved from <a href="https://www.crossref.org/" target="_blank">Crossref</a> and <a href="https://opencitations.net/" target="_blank">OpenCitations.</a></i></p>
+				<p><i>Data retrieved from <a href="https://openalex.org/" target="_blank">OpenAlex.</a></i></p>
 			</center>
 		</header>
 		<main>
 			<div class="panels">
 				<fieldset id="left">
 					<legend>Papers</legend>
-					<div class="table">
+					<div id="filters" class="small"></div>
+					<div class="table small">
 						<table>
 							<thead><tr>
 									<td></td>
@@ -53,6 +57,7 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 									<td>When</td>
 									<td>Journal</td>
 									<td>Cit</td>
+									<td>Type</td>
 								</tr></thead>
 								<tbody id="papers"></tbody>
 						</table>
@@ -60,17 +65,20 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 					<br>
 					<form onsubmit="return false">
 						Enter <input type="text" id="doiInput" placeholder="DOI"> to <button type="button" id="addPaperBtn">see</button> details of the paper below.
-						<div id="manualTable" style="display: none" class="table">
+						<div id="manualTable" style="display: none" class="table small">
+							<button type="button" class="download">Download CSV</button>
+							<button type="button" class="delete">Delete selected</button>
 							<table>
 								<thead>
 									<tr>
-										<td></td>
+										<td><input type="checkbox" class="all" title="select all"></td>
 										<td>DOI</td>
 										<td>Title</td>
 										<td>Authors</td>
 										<td>When</td>
 										<td>Journal</td>
 										<td>Cit</td>
+										<td>Type</td>
 									</tr>
 								</thead>
 
@@ -78,26 +86,29 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 							</table>
 						</div>
 					</form>
-					<!-- <form>
-						Enter <input type="text" id="authorname" placeholder="author name"> to <button type="button" id="searchauthor">search</button> all works of given author. Not today.
-						<div id="authorTable" style="display: none" class="table">
-						<table>
-						<thead>
-						<tr>
-						<td></td>
-						<td>DOI</td>
-						<td>Title</td>
-						<td>Authors</td>
-						<td>When</td>
-						<td>Journal</td>
-						<td>Cit</td>
-						</tr>
-						</thead>
+					<form onsubmit="return false">
+						Enter <input type="text" id="authorInput" placeholder="ORCID or name"> to <button type="button" id="searchAuthorBtn">search</button> all works of an author below.
+						<div id="authorTable" style="display: none" class="table small">
+							<button type="button" class="download">Download CSV</button>
+							<button type="button" class="delete">Delete selected</button>
+							<table>
+								<thead>
+									<tr>
+										<td><input type="checkbox" class="all" title="select all"></td>
+										<td>DOI</td>
+										<td>Title</td>
+										<td>Authors</td>
+										<td>When</td>
+										<td>Journal</td>
+										<td>Cit</td>
+										<td>Type</td>
+									</tr>
+								</thead>
 
-						<tbody id="authorpapers"></tbody>
-						</table>
+								<tbody id="authorpapers"></tbody>
+							</table>
 						</div>
-						</form> -->
+					</form>
 				</fieldset>
 				<div id="right">
 				</div>
@@ -140,15 +151,29 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 						base: "https://api.openalex.org/works?filter=openalex:",
 						tail: "&per-page=100&sort=cited_by_count:desc"
 					},
-					search: {
-						base: "https://api.openalex.org/works?search="
+					authors: {
+						base: "https://api.openalex.org/authors/",
+						search: "https://api.openalex.org/authors?search="
+					},
+					works: {
+						base: "https://api.openalex.org/works?filter=author.id:",
+						tail: "&per-page=200&sort=cited_by_count:desc"
 					}
 				},
+				maxworks: 1000, /* most works loaded for one author */
 				openCitations: {
 					base: "https://api.opencitations.net/index/v2/citations/doi:",
 					key: "77ad02c079abea8361b7b526c2a36627"
 				},
-				dataSource: "dois.json"
+				/* order of the category filter, others found in dois.json are added after these */
+				categories: [
+					"journal article",
+					"conference presentation",
+					"software paper",
+					"preprint"
+				],
+				uncategorised: "other", /* for papers without a category */
+				dataSource: "/dois.json"
 			};
 
 			const NAME_ALIASES = new Set(CONFIG.researcher.aliases);
@@ -165,7 +190,10 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 			const trail = [];
 			let token = 0; /* changes on every navigation, stops late fetches from overwriting the panel */
 
+			const shown = new Set(); /* categories currently shown, all by default */
+
 			let pdata = []; /* my papers, set in main */
+			const tabledocs = { manual: [], author: [] }; /* papers in the second and third table */
 			let extra = 0; /* papers added manually */
 
 			async function getDois(src) {
@@ -187,16 +215,8 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 				return await res.json();
 			}
 
-			async function searchAuthor(name) {
-
-				const url =
-					CONFIG.alex.search.base +
-					encodeURIComponent(name);
-
-				const data = await api(url);
-
-				return data.results || [];
-			}
+			/* orcid, bare or inside a link */
+			const ORCID = /\d{4}-\d{4}-\d{4}-\d{3}[\dX]/i;
 
 			/* escape text before it goes into innerHTML */
 			function esc(s) {
@@ -243,6 +263,7 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 					year: d.publication_year ?? null,
 					when: whena,
 					type: d.type ?? null,
+					categories: [], /* my own, from dois.json */
 					oa: d.open_access?.is_oa ?? false,
 					oaurl: d.open_access?.oa_url ?? null,
 					journal: d.primary_location?.source?.display_name ?? null,
@@ -314,15 +335,46 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 				return doc;
 			}
 
-			/* fetch data for all dois, few at a time */
-			async function crd(dois) {
+			/* dois.json: "doi" or { "doi": "...", "category": "preprint" }, category can be a list too */
+			function entriesof(raw) {
+				const byDoi = new Map();
+
+				raw.forEach(e => {
+					const en = typeof e === "string" ? { doi: e } : e;
+
+					if (!en?.doi) return;
+
+					const key = en.doi.trim().toLowerCase();
+					const cats = [].concat(en.category ?? en.categories ?? [])
+						.map(c => String(c).trim())
+						.filter(Boolean);
+
+					/* same doi listed twice, join the categories */
+					const old = byDoi.get(key);
+
+					byDoi.set(key, {
+						doi: en.doi.trim(),
+						categories: [...new Set([...(old?.categories ?? []), ...cats])]
+					});
+				});
+
+				return [...byDoi.values()];
+			}
+
+			/* fetch data for all entries, few at a time */
+			async function crd(entries) {
 				const results = [];
 
-				for (let i = 0; i < dois.length; i += 5) {
+				for (let i = 0; i < entries.length; i += 5) {
 					const got = await Promise.all(
-						dois.slice(i, i + 5).map(doi =>
-							getData(doi).catch(e => {
-								console.error(doi, e);
+						entries.slice(i, i + 5).map(en =>
+							getData(en.doi)
+							.then(doc => {
+								if (doc) doc.categories = en.categories;
+								return doc;
+							})
+							.catch(e => {
+								console.error(en.doi, e);
 								return null;
 							})
 						)
@@ -390,7 +442,7 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 				document.querySelectorAll("input[name=paper]")
 					.forEach(r => r.checked = false);
 
-				defaultRight(pdata);
+				defaultRight(visible());
 			}
 
 			function navbar() {
@@ -482,10 +534,10 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 						<li>
 						<a href="#" class="open">${esc(w.title)}</a>
 						<a href="${esc(w.url)}" target="_blank" title="open source page">&nearr;</a>
-						<br><span class="small label">
+						<div class="small label">
 						${esc(w.authors.slice(0, 3).map(authname).join(", "))}${w.authors.length > 3 ? " et al." : ""}
 						· ${esc(w.year)} · ${esc(w.journal)} · ${w.citations.count} cit
-						</span>
+						</div>
 						</li>
 					`).join("")}
 					</ol>`}`;
@@ -522,7 +574,10 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 
 					${doc.abstract ? `
 					<tr><td class="label">abstract</td>
-					<td class="abstract">${esc(doc.abstract)}</td></tr>` : ""}
+					<td class="small">${esc(doc.abstract)}</td></tr>` : ""}
+
+					<tr><td class="label">category</td>
+					<td>${esc(doc.categories.join(", ") || null)}</td></tr>
 
 					<tr><td class="label">journal</td>
 					<td>${esc(doc.journal)}</td></tr>
@@ -539,7 +594,7 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 						: "closed / unknown"}</td></tr>
 
 					<tr><td class="label">citations</td>
-					<td id="citehere">Cited by </td></tr>
+					<td id="citehere"></td></tr>
 
 					<tr><td class="label">references</td>
 					<td id="refhere"></td></tr>
@@ -608,10 +663,10 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 					? aut.raw_affiliation_strings
 					: aut.institutions?.map(i => i.display_name) ?? []
 				).join("\n");
-				span.style.cursor = "pointer";
+				span.className = "author";
 
 				if (span.textContent === CONFIG.researcher.name) {
-					span.style.fontWeight = "bold";
+					span.classList.add("me");
 				}
 
 				return span;
@@ -674,6 +729,10 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 					cell.appendChild(citing(doc));
 				},
 
+				categories(cell, doc) {
+					cell.textContent = doc.categories.join(", ") || "NA";
+				},
+
 				authors(cell, doc) {
 					cell.appendChild(
 						listauthors(doc.authors)
@@ -683,6 +742,7 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 
 			function row(doc, i, pd) {
 				const tr = document.createElement("tr");
+				tr.doc = doc; /* the category filter needs it */
 
 				const showkeys = [
 					"full",
@@ -691,7 +751,8 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 					"authors",
 					"when",
 					"journal",
-					"citations"
+					"citations",
+					"categories"
 				];
 
 				showkeys.forEach(key => {
@@ -709,20 +770,163 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 				return tr;
 			}
 
-			/* put a doc in the table below the doi box, once */
-			function addrow(doc) {
-				const manualbd = document.getElementById("manualpapers");
+			/* put a doc in the second table (doi box, details panel) or the third (author search), once */
+			function addrow(doc, key = "manual") {
+				const body = document.getElementById(key + "papers");
 
-				/* already in one of the tables */
-				if (pdata.includes(doc) ||
-					[...manualbd.children].some(tr => tr.dataset.id === doc.id))
-					return;
+				/* already in this table, the others don't count */
+				if ([...body.children].some(tr => tr.dataset.id === doc.id))
+					return false;
 
-				document.getElementById("manualTable").style.display = "block";
+				document.getElementById(key + "Table").style.display = "block";
 
 				const tr = row(doc, pdata.length + extra++, pdata);
 				tr.dataset.id = doc.id;
-				manualbd.appendChild(tr);
+
+				/* to pick rows for deleting */
+				const pick = document.createElement("input");
+				pick.type = "checkbox";
+				tr.firstChild.prepend(pick);
+
+				body.appendChild(tr);
+				tabledocs[key].push(doc);
+
+				return true;
+			}
+
+			/* csv, select all and delete selected of the second and third table */
+			function wiretable(key, csvname) {
+				const box = document.getElementById(key + "Table");
+				const body = document.getElementById(key + "papers");
+				const all = box.querySelector(".all");
+
+				box.querySelector(".download").onclick =
+					() => downloadCSV(tabledocs[key], csvname);
+
+				all.onchange = () => body
+					.querySelectorAll("input[type=checkbox]")
+					.forEach(c => c.checked = all.checked);
+
+				box.querySelector(".delete").onclick = () => {
+					body.querySelectorAll("input[type=checkbox]:checked").forEach(c => {
+						const tr = c.closest("tr");
+						tabledocs[key].splice(tabledocs[key].indexOf(tr.doc), 1);
+						tr.remove();
+					});
+
+					all.checked = false;
+
+					/* nothing left, hide the table again */
+					if (!tabledocs[key].length)
+						box.style.display = "none";
+				};
+			}
+
+			/* author search: orcid is exact, a name gives candidates to pick from */
+
+			async function searchauthor(q, btn) {
+				q = q.trim();
+
+				if (!q) return;
+
+				btn.disabled = true;
+
+				try {
+					const orcid = q.match(ORCID)?.[0];
+
+					if (orcid) {
+						await loadworks(
+							await api(CONFIG.alex.authors.base + "https://orcid.org/" + orcid)
+						);
+					}
+					else {
+						const list = (await api(
+							CONFIG.alex.authors.search + encodeURIComponent(q) + "&per-page=10"
+						)).results ?? [];
+
+						trail.length = 0;
+						show(() => candidates(list, q));
+					}
+				}
+				catch (e) {
+					console.error(e);
+					alert("Author not found");
+				}
+
+				btn.disabled = false;
+			}
+
+			function candidates(list, q) {
+				right.innerHTML = `
+					${navbar()}
+					<span class="label">authors matching</span> <i>${esc(q)}</i>
+					${!list.length ? "<p>NA</p>" : `
+					<ol>
+					${list.map(a => `
+						<li>
+						<a href="#" class="open">${esc(a.display_name)}</a>
+						<div class="small label">
+						${esc(a.last_known_institutions?.[0]?.display_name ?? a.last_known_institution?.display_name)}
+						· ${a.works_count} works · ${a.cited_by_count} cit${a.orcid ? " · ORCID" : ""}
+						<br>${esc(a.topics?.slice(0, 3).map(t => t.display_name).join(", ") || null)}
+						</div>
+						</li>
+					`).join("")}
+					</ol>`}`;
+				wirenav();
+
+				right.querySelectorAll("a.open").forEach((a, i) => {
+					a.onclick = e => {
+						e.preventDefault();
+						loadworks(list[i]).catch(err => {
+							console.error(err);
+							alert("Failed");
+						});
+					};
+				});
+			}
+
+			/* all works of an author go to the table below */
+			async function loadworks(author) {
+				trail.length = 0;
+				const t = ++token;
+
+				right.innerHTML = `
+					${navbar()}
+					<p class="label">loading works of ${esc(author.display_name)}...</p>`;
+				wirenav();
+
+				const id = author.id.split("/").pop();
+				const works = [];
+
+				/* new search, new results */
+				document.getElementById("authorpapers").innerHTML = "";
+				tabledocs.author.length = 0;
+				let total = 0;
+
+				for (let page = 1; works.length < CONFIG.maxworks; page++) {
+					const r = await api(
+						CONFIG.alex.works.base + id + CONFIG.alex.works.tail + "&page=" + page
+					);
+
+					total = r.meta?.count ?? 0;
+					works.push(...r.results);
+
+					if (!r.results.length || works.length >= total) break;
+				}
+
+				works.forEach(w => addrow(known(w), "author"));
+
+				document.getElementById("authorTable").scrollIntoView();
+
+				/* user went somewhere else meanwhile */
+				if (t !== token) return;
+
+				right.innerHTML = `
+					${navbar()}
+					<p>Added <strong>${works.length}</strong> of ${total} works by
+					<strong>${esc(author.display_name)}</strong> to the table below.</p>`;
+				wirenav();
 			}
 
 			/* citation indices */
@@ -811,6 +1015,79 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 				}
 			};
 
+			/* category filter */
+
+			function catsof(doc) {
+				return doc.categories.length
+					? doc.categories
+					: [CONFIG.uncategorised];
+			}
+
+			/* my papers in the categories that are on */
+			function visible() {
+				return pdata.filter(doc => catsof(doc).some(c => shown.has(c)));
+			}
+
+			function refilter() {
+				document.querySelectorAll("#papers tr").forEach(tr => {
+					tr.hidden = !catsof(tr.doc).some(c => shown.has(c));
+				});
+
+				/* summary follows the filter, details stay as they are */
+				if (!trail.length) defaultRight(visible());
+			}
+
+			function filters(pd) {
+				const counts = new Map();
+				pd.forEach(doc => catsof(doc).forEach(c =>
+					counts.set(c, (counts.get(c) ?? 0) + 1)
+				));
+
+				const unc = CONFIG.uncategorised;
+				const order = [...new Set([...CONFIG.categories, ...counts.keys()])]
+					.filter(c => counts.has(c) && c !== unc);
+
+				if (counts.has(unc)) order.push(unc);
+
+				order.forEach(c => shown.add(c));
+
+				/* nothing to choose from */
+				if (order.length < 2) return;
+
+				const box = document.getElementById("filters");
+
+				box.innerHTML = `<span class="label">show</span> ` +
+					order.map((c, i) => `
+						<span class="chip">
+						<label><input type="checkbox" data-i="${i}" checked> ${esc(c)} (${counts.get(c)})</label>
+						<a href="#" data-only="${i}">only</a>
+						</span>`).join("") +
+					`<a href="#" id="allCats">all</a>`;
+
+				const boxes = box.querySelectorAll("input[type=checkbox]");
+				const sync = () => boxes.forEach((b, i) => b.checked = shown.has(order[i]));
+
+				boxes.forEach((b, i) => b.onchange = () => {
+					b.checked ? shown.add(order[i]) : shown.delete(order[i]);
+					refilter();
+				});
+
+				box.querySelectorAll("a[data-only]").forEach(a => a.onclick = e => {
+					e.preventDefault();
+					shown.clear();
+					shown.add(order[a.dataset.only]);
+					sync();
+					refilter();
+				});
+
+				document.getElementById("allCats").onclick = e => {
+					e.preventDefault();
+					order.forEach(c => shown.add(c));
+					sync();
+					refilter();
+				};
+			}
+
 			function defaultRight(pd) {
 
 				const citations =
@@ -828,7 +1105,7 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 		</button>
 		<hr>
 
-		Total papers: <strong>${pd.length}</strong> <br>
+		Total papers: <strong>${pd.length}</strong>${pd.length < pdata.length ? ` (of ${pdata.length})` : ""} <br>
 		Total citations: <strong>${cd.total}</strong> <br>
 		Mean citations: <strong>${cd.mean}</strong> <br>
 		Median citations: <strong>${cd.median}</strong> <br>
@@ -843,7 +1120,7 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 		<ol id="topcited">
 		${top.map(d => `
 			<li><a href="#">${esc(d.title)}</a>
-			<span class="small label">(${d.citations.count})</span></li>
+			<div class="small label">${d.citations.count} cit</div></li>
 		`).join("")}
 		</ol>
 
@@ -878,7 +1155,7 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 						alert("Invalid DOI");
 					}
 					else {
-						addrow(doc);
+						if (!addrow(doc)) alert("Already in the table below");
 						doiInput.value = "";
 					}
 				}
@@ -890,7 +1167,7 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 				addBtn.disabled = false;
 			}
 
-			function downloadCSV(pd) {
+			function downloadCSV(pd, name = "publications.csv") {
 
 				if (!pd.length) return;
 
@@ -902,6 +1179,7 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 					.join("; "),
 					when: doc.when,
 					journal: doc.journal,
+					category: doc.categories.join("; "),
 					citations: doc.citations.count,
 					volume: doc.vol,
 					issue: doc.issue,
@@ -935,7 +1213,7 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 
 				const a = document.createElement("a");
 				a.href = URL.createObjectURL(blob);
-				a.download = "publications.csv";
+				a.download = name;
 				a.click();
 			}
 
@@ -949,12 +1227,36 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 				document.getElementById("researcherName").textContent = CONFIG.researcher.name;
 				document.title = "Publications of " + CONFIG.researcher.name;
 
+				/* add search doi button, enter works too */
+				const addBtn = document.getElementById("addPaperBtn");
+				addBtn.onclick = async () => adddoi(pdata, addBtn);
+				document.getElementById("doiInput").onkeydown = e => {
+					if (e.key === "Enter") addBtn.click();
+				};
+
+				/* search author button, enter works too */
+				const searchBtn = document.getElementById("searchAuthorBtn");
+				const authorInput = document.getElementById("authorInput");
+				searchBtn.onclick = () => searchauthor(authorInput.value, searchBtn);
+				authorInput.onkeydown = e => {
+					if (e.key === "Enter") searchBtn.click();
+				};
+
+				/* csv, select all and delete selected of the second and third table */
+				wiretable("manual", "extra-publications.csv");
+				wiretable("author", "author-publications.csv");
+
+				/* escape goes one step back in the right panel */
+				document.onkeydown = e => {
+					if (e.key === "Escape" && e.target.tagName !== "INPUT") back();
+				};
+
 				right.textContent = "loading...";
 
-				let dois;
+				let entries;
 
 				try {
-					dois = await getDois(CONFIG.dataSource);
+					entries = entriesof(await getDois(CONFIG.dataSource));
 				}
 				catch (e) {
 					console.error(e);
@@ -962,7 +1264,7 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 					return;
 				}
 
-				const pd = (await crd(dois))
+				const pd = (await crd(entries))
 					.sort((a, b) => {
 						const da = new Date(a.full.publication_date);
 						const db = new Date(b.full.publication_date);
@@ -971,30 +1273,14 @@ fieldset { margin: 0; border: 0.4px solid #B3B3C9 }
 
 				pdata = pd;
 
+				/* category filter, before the summary so it counts what is shown */
+				filters(pd);
+
 				/* initialise right panel */
 				defaultRight(pd);
 
 				/* populate my papers */
 				pd.forEach((doc, i) => pprbd.appendChild(row(doc, i, pd)));
-
-				/* add search doi button, enter works too */
-				const addBtn = document.getElementById("addPaperBtn");
-				addBtn.onclick = async () => adddoi(pd, addBtn);
-				document.getElementById("doiInput").onkeydown = e => {
-					if (e.key === "Enter") addBtn.click();
-				};
-
-				/* escape goes one step back in the right panel */
-				document.onkeydown = e => {
-					if (e.key === "Escape" && e.target.tagName !== "INPUT") back();
-				};
-
-				/* add search author button */
-				/* const searchBtn = document.getElementById("searchauthor");
-				searchBtn.onclick = async () => searchauthor(
-					document.getElementById("authorname").value,
-					searchBtn
-				); */
 			}
 
 			main();

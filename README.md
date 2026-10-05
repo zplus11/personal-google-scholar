@@ -1,3 +1,10 @@
 # Publications
 
-A single-file, Google Scholar-style page that lists your papers with citation metrics (h, i10, g, e-index) and lets you click through details, citing works and references in a side panel, using live data from [OpenAlex](https://openalex.org/). To set up, put your DOIs in a [dois.json](dois.json) array next to [index.html](index.html) and edit the `researcher` block in `CONFIG` with your name, email and lowercase name aliases. Serve the folder with `python3 -m http.server` and open `localhost:8000` (it won't work from `file://`), or push to GitHub Pages.
+A single-file, Google Scholar-style page that lists your papers with citation metrics (h, i10, g, e-index) and lets you click through details, citing works and references in a side panel.
+
+See https://zplus11.github.io/personal-google-scholar for a live demo.
+
+- see details of your publications
+- see details of any publication by its DOI
+- see details of all publications of a researcher by their name or ORCID
+- details include all basic details of the publication + citation metrics + papers citing it
